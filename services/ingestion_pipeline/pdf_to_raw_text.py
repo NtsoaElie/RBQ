@@ -2,8 +2,8 @@ import pymupdf
 
 doc = pymupdf.open("C:\\Users\\airme\\Desktop\\ADM_ProfilDeCompetences.pdf")
 filename = doc.name
-page_count = []
-page_number = 0
+page_count = [] #page count list
+page_number = 0 #page number counter
 
 for page in doc: 
     text = page.get_text("text")

@@ -1,6 +1,5 @@
 import pymupdf
 
-
 def pdf_to_raw_text(filepath):
     doc = pymupdf.open(filepath)
     filename = doc.name

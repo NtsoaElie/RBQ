@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="RBQPrep">
+  <rect width="512" height="512" rx="128" fill="#ce742c"/>
+  <path d="M256 148c-64 0-108 48-108 108v28H116v32h280v-32H364v-28c0-60-44-108-108-108z" fill="#fff"/>
+  <path d="M148 284h216" stroke="#fff" stroke-width="16" stroke-linecap="round"/>
+  <path d="M216 244l28 28 60-60" stroke="#ce742c" stroke-width="28" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>

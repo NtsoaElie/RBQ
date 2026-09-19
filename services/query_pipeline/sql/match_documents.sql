@@ -1,5 +1,5 @@
 -- Run once in the Supabase SQL editor.
--- Requires the `document_chunks` table written by services/ingestion_pipeline,
+-- Requires the `document_chunks` table written by services/ingestion_csharp,
 -- whose `embedding` column is a pgvector vector(1536) (text-embedding-3-small).
 
 create extension if not exists vector;

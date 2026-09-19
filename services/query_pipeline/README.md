@@ -15,7 +15,7 @@ fails with `PGRST202: Could not find the function public.match_documents`.
 dotnet run --launch-profile http     # http://localhost:5080
 ```
 
-Config comes from the repo-root `.env` (shared with the Python pipeline):
+The query API loads configuration from the repo-root `.env`. The C# ingestion CLI uses process environment variables instead:
 
 | Variable | Required | Default |
 | --- | --- | --- |

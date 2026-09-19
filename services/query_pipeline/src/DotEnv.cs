@@ -2,7 +2,7 @@ namespace Rbq.QueryApi;
 
 /// <summary>
 /// Loads the repo-root .env into the process environment so the C# API reads the
-/// same keys the Python ingestion pipeline already uses.
+/// same environment keys used by the ingestion pipeline.
 /// </summary>
 public static class DotEnv
 {

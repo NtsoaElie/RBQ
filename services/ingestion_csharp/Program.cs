@@ -6,7 +6,8 @@ using Rbq.Ingestion;
 // Ingestion runs without credentials. Only the upload command needs API keys.
 if (args.Length == 0 || args[0] is "--help" or "-h")
 {
-    Console.WriteLine("ingest FILE --document-id ID --source-type profile|reference|exam_info --output FILE [--profile-id ADM] [--source-url URL] [--skill-id ID ...]");
+    Console.WriteLine("ingest FILE --document-id ID --source-type profile|reference|exam_info --output FILE [--kind profile|legal|exam_info|technical] [--title TITLE] [--profile-id ADM] [--source-url URL] [--skill-id ID ...]");
+    Console.WriteLine("Optional: --catalog SOURCES.json supplies title, kind, URL and exam associations for --document-id.");
     Console.WriteLine("upload CHUNKS.json");
     return 0;
 }
@@ -20,7 +21,7 @@ try
     {
         var values = new Dictionary<string, string>();
         var skillIds = new List<string>();
-        string[] allowed = ["--document-id", "--source-type", "--output", "--profile-id", "--source-url", "--skill-id"];
+        string[] allowed = ["--document-id", "--source-type", "--output", "--profile-id", "--source-url", "--skill-id", "--kind", "--title", "--catalog"];
         for (int index = 2; index < args.Length; index += 2)
         {
             string name = args[index];
@@ -35,7 +36,17 @@ try
         string Require(string name) => values.TryGetValue(name, out string? value) && !string.IsNullOrWhiteSpace(value)
             ? value : throw new ArgumentException($"Required option: {name}");
 
-        SourceType sourceType = Require("--source-type") switch
+        DocumentSource? source = values.TryGetValue("--catalog", out string? catalogPath)
+            ? SourceCatalog.Find(catalogPath, Require("--document-id")) : null;
+        string sourceTypeName = values.GetValueOrDefault("--source-type") ?? (source?.Kind switch
+        {
+            DocumentKind.CompetencyProfile => "profile",
+            DocumentKind.ExamInformation => "exam_info",
+            DocumentKind.LegalDocument or DocumentKind.TechnicalDocument => "reference",
+            _ => throw new ArgumentException("Provide --source-type or --catalog.")
+        });
+
+        SourceType sourceType = sourceTypeName switch
         {
             "profile" => SourceType.Profile,
             "reference" => SourceType.Reference,
@@ -45,8 +56,20 @@ try
 
         var options = new IngestionOptions
         {
+            Source = source,
+            Title = values.GetValueOrDefault("--title"),
+            Kind = values.GetValueOrDefault("--kind") switch
+            {
+                null => null,
+                "profile" => DocumentKind.CompetencyProfile,
+                "legal" => DocumentKind.LegalDocument,
+                "exam_info" => DocumentKind.ExamInformation,
+                "technical" => DocumentKind.TechnicalDocument,
+                _ => throw new ArgumentException("Unknown document kind.")
+            },
             DocumentId = Require("--document-id"),
-            ProfileId = values.GetValueOrDefault("--profile-id"),
+            ProfileId = values.GetValueOrDefault("--profile-id") ??
+                (sourceType == SourceType.Profile && source?.ProfileIds.Count == 1 ? source.ProfileIds[0] : null),
             SourceType = sourceType,
             SourceUrl = values.GetValueOrDefault("--source-url"),
             SkillIds = skillIds
@@ -72,15 +95,25 @@ try
             throw new ArgumentException("Only PDF and UTF-8 TXT files are supported. Convert HTML sources explicitly.");
         }
 
-        List<Chunk> chunks = new DocumentChunker().CreateChunks(pages, options);
-        if (chunks.Count == 0)
-            throw new InvalidDataException("No chunks found. Review extraction and profile layout.");
+        ParsingResult result = new DocumentChunker().Parse(pages, options);
+        List<Chunk> chunks = result.Chunks;
 
         string output = Path.GetFullPath(Require("--output"));
         Directory.CreateDirectory(Path.GetDirectoryName(output)!);
         await File.WriteAllTextAsync(output, JsonSerializer.Serialize(chunks, ChunkJson.Options));
+        string reportPath = output + ".report.json";
+        await File.WriteAllTextAsync(reportPath, JsonSerializer.Serialize(new
+        {
+            result.ParserVersion,
+            ChunkCount = chunks.Count,
+            result.Warnings,
+            result.UnclassifiedBlocks,
+            result.ExcludedBlocks
+        }, ChunkJson.Options));
         Console.WriteLine($"{chunks.Count} chunks; {chunks.Count(chunk => chunk.ReviewIssues.Count > 0)} require review. Saved {output}");
-        return 0;
+        Console.WriteLine($"Review report: {reportPath}");
+        foreach (string warning in result.Warnings) Console.WriteLine("Warning: " + warning);
+        return chunks.Count == 0 || result.UnclassifiedBlocks.Count > 0 ? 2 : 0;
     }
 
     if (args[0] == "upload" && args.Length == 2)

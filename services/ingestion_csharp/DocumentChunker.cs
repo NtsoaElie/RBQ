@@ -1,261 +1,127 @@
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
-using System.Text.RegularExpressions;
 using Rbq.Contracts;
+using Rbq.Ingestion.Parsers;
 
 namespace Rbq.Ingestion;
 
+/// <summary>Coordinates extraction cleanup, parser selection and coverage validation.</summary>
 public sealed class DocumentChunker
 {
-    private static readonly Regex ModuleHeading = new(
-        @"^Module\s+(\d+)\s*[–—:-]\s*(.+)", RegexOptions.IgnoreCase);
-    private static readonly Regex NumberedHeading = new(
-        @"^(\d+(?:\.\d+)*)(?:\.\s*|\s+)(\S.*)");
-
-    public List<Chunk> CreateChunks(IReadOnlyList<DocumentPage> pages, IngestionOptions options)
+    public ParsingResult Parse(IReadOnlyList<DocumentPage> pages, IngestionOptions options)
     {
-        if (string.IsNullOrWhiteSpace(options.DocumentId))
-            throw new ArgumentException("DocumentId is required.");
+        if (string.IsNullOrWhiteSpace(options.DocumentId) || options.MaxCharacters < 100)
+            throw new ArgumentException("DocumentId and a character budget of at least 100 are required.");
         if (options.SourceType == SourceType.Profile && string.IsNullOrWhiteSpace(options.ProfileId))
-            throw new ArgumentException("A competency profile needs a ProfileId.");
-        if (!Enum.IsDefined(options.SourceType) || options.MaxCharacters < 100)
-            throw new ArgumentException("Invalid source type or character budget.");
-        if (pages.Count == 0)
-            return [];
-        if (pages.Select(page => page.Filename).Distinct().Count() != 1)
-            throw new ArgumentException("Process one document at a time.");
-        if (pages.Any(page => page.Number < 1) ||
+            throw new ArgumentException("A profile needs a ProfileId.");
+        if (!Enum.IsDefined(options.SourceType))
+            throw new ArgumentException("Invalid source type.");
+        if (pages.Count == 0) return new ParsingResult();
+        if (pages.Select(page => page.Filename).Distinct().Count() != 1 ||
+            pages.Any(page => page.Number < 1) ||
+            pages.Select(page => page.Number).Distinct().Count() != pages.Count ||
             !pages.Select(page => page.Number).SequenceEqual(pages.Select(page => page.Number).Order()))
-            throw new ArgumentException("Pages must be in ascending order with positive numbers.");
+            throw new ArgumentException("Process one document with unique, ascending page numbers.");
 
-        string version = Hash(string.Join("\n", pages.Select(page => page.Text)));
-        if (options.SourceType == SourceType.Profile)
-            return ParseProfile(pages, options, version);
+        if (options.Source is not null && (options.Source.Id != options.DocumentId ||
+            (options.Kind.HasValue && options.Kind != options.Source.Kind)))
+            throw new ArgumentException("Catalog identity or kind conflicts with ingestion options.");
 
-        return SplitReference(pages, options, version);
-    }
-
-    private static List<Chunk> ParseProfile(
-        IReadOnlyList<DocumentPage> pages, IngestionOptions options, string version)
-    {
-        var chunks = new List<Chunk>();
-        Competency? module = null;
-        Competency? competency = null;
-        Competency? skill = null;
-        var lines = new List<string>();
-        int startPage = 0;
-        int endPage = 0;
-        bool inSummary = false;
-
-        // Save the current skill before changing its parent or starting another skill.
-        void SaveCurrentSkill()
+        DocumentKind kind = options.Source?.Kind ?? options.Kind ?? options.SourceType switch
         {
-            if (skill is null)
-                return;
+            SourceType.Profile => DocumentKind.CompetencyProfile,
+            SourceType.ExamInfo => DocumentKind.ExamInformation,
+            _ => DocumentKind.TechnicalDocument
+        };
+        SourceType expectedType = kind switch
+        {
+            DocumentKind.CompetencyProfile => SourceType.Profile,
+            DocumentKind.ExamInformation => SourceType.ExamInfo,
+            _ => SourceType.Reference
+        };
+        if (options.SourceType != expectedType)
+            throw new ArgumentException("Document kind and source type disagree.");
 
-            chunks.Add(BuildChunk(
-                string.Join("\n", lines), startPage, endPage, pages[0].Filename,
-                options, version, module, competency, skill));
-        }
-
+        var blocks = new List<TextBlock>();
         foreach (DocumentPage page in pages)
         {
+            if (page.Blocks.Count > 0)
+            {
+                blocks.AddRange(page.Blocks);
+                continue;
+            }
+            // Text files have no geometry. Do not guess which lines are page furniture.
+            bool startsParagraph = true;
+            int lineNumber = 0;
             foreach (string rawLine in page.Text.Split('\n'))
             {
-                string line = rawLine.Trim();
-                if (line.Length == 0 || line.All(char.IsDigit))
-                    continue;
-                if (line == "Administration" || line == "Gestion de projets et de chantiers" ||
-                    string.Equals(line, options.ProfileId, StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                if (line.Contains("Éléments de compétence") || line.Contains("Habiletés requises"))
+                lineNumber++;
+                if (string.IsNullOrWhiteSpace(rawLine))
                 {
-                    inSummary = line.Contains("abordés");
+                    startsParagraph = true;
                     continue;
                 }
-
-                Match moduleMatch = ModuleHeading.Match(line);
-                if (moduleMatch.Success)
+                blocks.Add(new TextBlock
                 {
-                    string code = moduleMatch.Groups[1].Value;
-                    if (module?.Code == code)
-                        continue; // Repeated header on a continuation page.
-
-                    SaveCurrentSkill();
-                    module = new Competency
-                    {
-                        Id = $"{options.ProfileId}:module:{code}",
-                        Code = code,
-                        Label = moduleMatch.Groups[2].Value
-                    };
-                    competency = null;
-                    skill = null;
-                    lines.Clear();
-                    inSummary = false;
-                    continue;
-                }
-
-                if (inSummary)
-                    continue;
-
-                Match heading = NumberedHeading.Match(line);
-                if (heading.Success && module is not null)
-                {
-                    SaveCurrentSkill();
-                    string code = heading.Groups[1].Value;
-                    string label = heading.Groups[2].Value;
-
-                    if (!code.Contains('.'))
-                    {
-                        competency = new Competency
-                        {
-                            Id = $"{module.Id}:competency:{code}",
-                            Code = code,
-                            Label = label
-                        };
-                        skill = null;
-                        lines.Clear();
-                    }
-                    else
-                    {
-                        if (competency is not null && !code.StartsWith(competency.Code + "."))
-                            competency = null;
-
-                        skill = new Competency
-                        {
-                            Id = $"{options.ProfileId}:skill:{code}",
-                            Code = code,
-                            Label = label
-                        };
-                        lines = [line];
-                        startPage = page.Number;
-                        endPage = page.Number;
-                    }
-                    continue;
-                }
-
-                if (skill is not null)
-                {
-                    lines.Add(line);
-                    endPage = page.Number;
-                }
-                else if (competency is not null)
-                {
-                    competency = new Competency
-                    {
-                        Id = competency.Id,
-                        Code = competency.Code,
-                        Label = competency.Label + " " + line
-                    };
-                }
+                    Id = $"{page.Number}:{lineNumber}",
+                    Text = rawLine.Trim(),
+                    PageNumber = page.Number,
+                    StartsParagraph = startsParagraph
+                });
+                startsParagraph = false;
             }
         }
 
-        SaveCurrentSkill();
-        // Flag every occurrence so the first duplicate cannot slip into an upload.
-        foreach (var group in chunks.GroupBy(chunk => chunk.Skill!.Id))
+        var document = new ExtractedDocument
         {
-            if (group.Count() > 1)
-                foreach (Chunk chunk in group)
-                    chunk.ReviewIssues.Add("duplicate_skill");
-        }
-        return chunks;
-    }
-
-    private static List<Chunk> SplitReference(
-        IReadOnlyList<DocumentPage> pages, IngestionOptions options, string version)
-    {
-        var chunks = new List<Chunk>();
-        var paragraphs = new List<string>();
-        int startPage = 0;
-        int endPage = 0;
-
-        void SaveParagraphs()
-        {
-            if (paragraphs.Count == 0)
-                return;
-            chunks.Add(BuildChunk(string.Join("\n\n", paragraphs), startPage, endPage,
-                pages[0].Filename, options, version));
-            paragraphs.Clear();
-        }
-
-        foreach (DocumentPage page in pages)
-        {
-            foreach (string rawParagraph in Regex.Split(page.Text, @"\n\s*\n"))
+            Source = options.Source ?? new DocumentSource
             {
-                string paragraph = rawParagraph.Trim();
-                if (paragraph.Length == 0)
-                    continue;
-
-                int combinedLength = paragraphs.Sum(part => part.Length) + paragraphs.Count * 2 + paragraph.Length;
-                if (combinedLength > options.MaxCharacters)
-                    SaveParagraphs();
-                if (paragraphs.Count == 0)
-                    startPage = page.Number;
-
-                paragraphs.Add(paragraph);
-                endPage = page.Number;
-            }
-        }
-        SaveParagraphs();
-        return chunks;
-    }
-
-    private static Chunk BuildChunk(
-        string text, int startPage, int endPage, string filename,
-        IngestionOptions options, string version,
-        Competency? module = null, Competency? competency = null, Competency? skill = null)
-    {
-        var breadcrumb = new List<string>();
-        if (!string.IsNullOrWhiteSpace(options.ProfileId))
-            breadcrumb.Add(options.ProfileId);
-        if (module is not null)
-            breadcrumb.Add(module.Label);
-        if (competency is not null)
-            breadcrumb.Add(competency.Label);
-
-        List<string> skillIds = skill is null ? [.. options.SkillIds] : [skill.Id];
-        var reviewIssues = new List<string>();
-        if (options.SourceType == SourceType.Profile && (module is null || competency is null))
-            reviewIssues.Add("missing_parent");
-        if (options.SourceType == SourceType.Reference && skillIds.Count == 0)
-            reviewIssues.Add("unmapped_reference");
-        if (text.Length > options.MaxCharacters)
-            reviewIssues.Add("oversized_unit");
-
-        // Structured identity avoids ambiguity between separators in source text.
-        string identity = JsonSerializer.Serialize(new
-        {
-            options.DocumentId, version, startPage, endPage, skillIds, text,
-            parserVersion = "rbq-csharp-v1"
-        });
-
-        return new Chunk
-        {
-            ChunkId = Hash(identity),
-            DocumentId = options.DocumentId,
-            DocumentVersion = version,
-            ProfileId = options.ProfileId,
-            SourceType = options.SourceType,
-            SourceUrl = options.SourceUrl,
-            Filename = filename,
-            PageStart = startPage,
-            PageEnd = endPage,
-            Module = module,
-            Competency = competency,
-            Skill = skill,
-            SkillIds = skillIds,
-            Breadcrumb = breadcrumb,
-            Content = text,
-            ReviewIssues = reviewIssues
+                Id = options.DocumentId,
+                Title = options.Title ?? Path.GetFileNameWithoutExtension(pages[0].Filename),
+                Url = options.SourceUrl,
+                Kind = kind,
+                ProfileIds = string.IsNullOrWhiteSpace(options.ProfileId) ? [] : [options.ProfileId]
+            },
+            Filename = pages[0].Filename,
+            Version = ChunkFactory.Hash(string.Join("\n", pages.Select(page => page.Text))),
+            Blocks = blocks
         };
+
+        HashSet<string> excludedIds = new HeaderFooterDetector().FindExcludedBlockIds(blocks);
+        var cleaned = new ExtractedDocument
+        {
+            Source = document.Source,
+            Filename = document.Filename,
+            Version = document.Version,
+            Blocks = blocks.Where(block => !excludedIds.Contains(block.Id)).ToList()
+        };
+
+        IDocumentParser parser = new DocumentParserFactory().GetParser(kind);
+        ParsingResult result = parser.Parse(cleaned, options);
+        foreach (TextBlock block in blocks.Where(block => excludedIds.Contains(block.Id)))
+            result.Exclude(block, "repeated_margin_or_page_number");
+
+        // Every block must appear in chunk provenance, exclusions or the review report.
+        var accounted = result.Chunks.SelectMany(chunk => chunk.SourceBlockIds)
+            .Concat(result.ExcludedBlocks.Select(item => item.Block.Id))
+            .Concat(result.UnclassifiedBlocks.Select(block => block.Id)).ToHashSet();
+        foreach (TextBlock block in blocks.Where(block => !accounted.Contains(block.Id)))
+            result.UnclassifiedBlocks.Add(block);
+
+        if (blocks.Any(block => block.Bounds is null))
+            result.Warnings.Add("Some blocks have no layout coordinates; header/footer detection was not applied to them.");
+        if (result.UnclassifiedBlocks.Count > 0)
+        {
+            result.Warnings.Add($"{result.UnclassifiedBlocks.Count} source blocks need classification.");
+            foreach (Chunk chunk in result.Chunks)
+                chunk.ReviewIssues.Add("unclassified_document_content");
+        }
+        if (result.Chunks.Count == 0)
+            result.Warnings.Add("No chunks produced; this document needs review.");
+        return result;
     }
 
-    private static string Hash(string value)
+    // Existing callers remain source-compatible; unresolved content flags travel with chunks.
+    public List<Chunk> CreateChunks(IReadOnlyList<DocumentPage> pages, IngestionOptions options)
     {
-        byte[] bytes = Encoding.UTF8.GetBytes(value);
-        return Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+        return Parse(pages, options).Chunks;
     }
 }

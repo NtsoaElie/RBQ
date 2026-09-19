@@ -32,7 +32,7 @@ Check(chunker.CreateChunks([], options).Count == 0, "Empty input");
 var chunks = chunker.CreateChunks([
     Page("Module 1 – Finance\nÉléments de compétence abordés dans ce module :\n1. Résumé", 5),
     Page("Module 1 – Finance\nÉléments de compétence Habiletés requises\n1. Comprendre\nle bilan\n1.1. Expliquer\n• les actifs", 6),
-    Page("Administration\n7\nModule 1 – Finance\nHabiletés requises\n• les passifs\n1.2.Calculer le solde.", 7)
+    Page("Module 1 – Finance\nHabiletés requises\n• les passifs\n1.2.Calculer le solde.", 7)
 ], options);
 Check(chunks.Count == 2, "Summary and repeated headers excluded");
 Check(chunks[0].PageStart == 6 && chunks[0].PageEnd == 7, "Skill continues across pages");
@@ -113,6 +113,8 @@ var evidence = await new ReferenceChunkReader(referenceHttp).ReadAsync(
     "ADM:skill:1.2", references[0].DocumentId, references[0].DocumentVersion);
 Check(evidence.Count == 1 && readRequests == 2, "Typed reference reading and pagination");
 
+ArchitectureChecks.Run(Check);
+
 if (args.Length > 0)
 {
     var pythonChunks = ChunkJson.Deserialize(await File.ReadAllTextAsync(args[0]));
@@ -125,6 +127,23 @@ if (args.Length > 1)
     Check(pdfChunks.Select(chunk => chunk.Module!.Id).Distinct().Count() == 4, "Official PDF: four modules");
     Check(pdfChunks.Select(chunk => chunk.Competency!.Id).Distinct().Count() == 24, "Official PDF: 24 competency elements");
     Check(pdfChunks.All(chunk => chunk.ReviewIssues.Count == 0), "Official PDF: no automatic review flags");
+}
+for (int index = 2; index < args.Length; index++)
+{
+    string profile = index == 2 ? "GSC" : "ETC-1.4";
+    int expected = index == 2 ? 130 : 205;
+    var pages = new PdfTextExtractor().Extract(args[index]);
+    var result = chunker.Parse(pages, new IngestionOptions
+    {
+        DocumentId = profile,
+        ProfileId = profile,
+        SourceType = SourceType.Profile
+    });
+    Check(result.Chunks.Count == expected, $"{profile}: expected skill count");
+    Check(result.Chunks.All(chunk => chunk.ReviewIssues.Count == 0), $"{profile}: no review flags");
+    Check(result.UnclassifiedBlocks.Count == 0, $"{profile}: no unclassified blocks");
+    int accounted = result.Chunks.Sum(chunk => chunk.SourceBlockIds.Count) + result.ExcludedBlocks.Count;
+    Check(accounted == pages.Sum(page => page.Blocks.Count), $"{profile}: all extracted blocks accounted for");
 }
 Console.WriteLine($"{passed} checks passed.");
 

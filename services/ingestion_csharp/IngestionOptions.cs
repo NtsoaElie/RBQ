@@ -4,6 +4,9 @@ namespace Rbq.Ingestion;
 
 public sealed class IngestionOptions
 {
+    public DocumentKind? Kind { get; init; }
+    public DocumentSource? Source { get; init; }
+    public string? Title { get; init; }
     public required string DocumentId { get; init; }
     public string? ProfileId { get; init; }
     public required SourceType SourceType { get; init; }

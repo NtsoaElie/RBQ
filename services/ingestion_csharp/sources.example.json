@@ -1,0 +1,26 @@
+[
+  {
+    "id": "rbq-administration",
+    "title": "Profil de compétences – Administration",
+    "url": "https://www.rbq.gouv.qc.ca/fileadmin/medias/pdf/Publications/francais/ADM_ProfilDeCompetences.pdf",
+    "kind": "competency_profile",
+    "profile_ids": ["ADM"],
+    "licence_subcategories": []
+  },
+  {
+    "id": "rbq-securite",
+    "title": "Profil de compétences – Gestion de la sécurité",
+    "url": "https://www.rbq.gouv.qc.ca/fileadmin/medias/pdf/Publications/francais/ProfilDeCompetences_Chantier_Securite.pdf",
+    "kind": "competency_profile",
+    "profile_ids": ["GSC"],
+    "licence_subcategories": []
+  },
+  {
+    "id": "rbq-execution-1.4",
+    "title": "Profil de compétences – Routes et canalisation",
+    "url": "https://www.rbq.gouv.qc.ca/fileadmin/medias/pdf/Publications/francais/1.4-profil-competences-ETC.pdf",
+    "kind": "competency_profile",
+    "profile_ids": ["ETC-1.4"],
+    "licence_subcategories": ["1.4"]
+  }
+]

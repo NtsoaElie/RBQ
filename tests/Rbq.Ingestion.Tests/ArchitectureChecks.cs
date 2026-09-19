@@ -37,7 +37,7 @@ public static class ArchitectureChecks
         DocumentPage Page(string text) => new() { Text = text, Number = 1, Filename = "test.txt" };
         var chunker = new DocumentChunker();
         string input = "Module 1 – Un titre\nsur deux lignes\nÉléments de compétence Habiletés minimalement requises\n2. Comprendre\n2.1. Appliquer les règles\nselon la loi (RLRQ, c. A-\n3.001, art. 4),\n199 et 200).\n2.1 art. 12 à 31).\n2.2. Expliquer.";
-        var result = chunker.Parse([Page(input)], options);
+        var result = chunker.CreateChunksWithReport([Page(input)], options);
         check(result.Chunks.Count == 2 && result.Chunks.All(chunk => chunk.ReviewIssues.Count == 0),
             "Wrapped citations do not create false skills or competencies");
         check(result.Chunks[0].Module!.Label == "Un titre sur deux lignes", "Multiline module title retained");
@@ -47,10 +47,10 @@ public static class ArchitectureChecks
             + result.ExcludedBlocks.Count + result.UnclassifiedBlocks.Count;
         check(accounted == input.Split('\n').Length, "Every source block is accounted for");
 
-        var unknown = chunker.Parse([Page("1.1. Une compétence sans module")], options);
+        var unknown = chunker.CreateChunksWithReport([Page("1.1. Une compétence sans module")], options);
         check(unknown.Chunks.Count == 0 && unknown.UnclassifiedBlocks.Count == 1 && unknown.Warnings.Count > 0,
             "Unknown profile layout retains unclassified source");
-        var noLayout = chunker.Parse([Page("Titre quelconque\n1000")], new IngestionOptions
+        var noLayout = chunker.CreateChunksWithReport([Page("Titre quelconque\n1000")], new IngestionOptions
         {
             DocumentId = "ref", SourceType = SourceType.Reference, SkillIds = ["TEST:skill:2.1"]
         });
@@ -61,12 +61,12 @@ public static class ArchitectureChecks
             DocumentId = "law", SourceType = SourceType.Reference, Kind = DocumentKind.LegalDocument,
             SkillIds = ["TEST:skill:2.1"]
         };
-        var law = chunker.Parse([Page("CHAPITRE I\nSECTION 1\nArticle 12. Une obligation.\nSauf dans le cas suivant :\n• Une exception.\nArticle 13. Une autre obligation.")], legalOptions);
+        var law = chunker.CreateChunksWithReport([Page("CHAPITRE I\nSECTION 1\nArticle 12. Une obligation.\nSauf dans le cas suivant :\n• Une exception.\nArticle 13. Une autre obligation.")], legalOptions);
         check(law.Chunks.Count == 2 && law.Chunks[0].ArticleNumber == "12", "Legal articles have source structure, not competencies");
         check(law.Chunks[0].Content.Contains("Une exception") && law.Chunks[0].Skill is null,
             "Article conditions and exceptions kept together");
         check(law.Chunks[0].SectionPath.SequenceEqual(new[] { "CHAPITRE I", "SECTION 1" }), "Legal hierarchy retained");
-        var unsupportedLaw = chunker.Parse([Page("12. Une disposition sans balisage")], legalOptions);
+        var unsupportedLaw = chunker.CreateChunksWithReport([Page("12. Une disposition sans balisage")], legalOptions);
         check(unsupportedLaw.UnclassifiedBlocks.Count == 1 && unsupportedLaw.Chunks.Count == 0,
             "Ambiguous legal numbering is reported instead of guessed");
         var factory = new DocumentParserFactory();
@@ -82,7 +82,7 @@ public static class ArchitectureChecks
                   "profile_ids":["ADM","GSC"],"licence_subcategories":["1.1.1","1.2"]}]
                 """);
             DocumentSource source = SourceCatalog.Find(catalogPath, "shared-law");
-            var catalogResult = chunker.Parse([Page("Article 1. Une règle.")], new IngestionOptions
+            var catalogResult = chunker.CreateChunksWithReport([Page("Article 1. Une règle.")], new IngestionOptions
             {
                 DocumentId = source.Id,
                 Source = source,

@@ -133,7 +133,7 @@ for (int index = 2; index < args.Length; index++)
     string profile = index == 2 ? "GSC" : "ETC-1.4";
     int expected = index == 2 ? 130 : 205;
     var pages = new PdfTextExtractor().Extract(args[index]);
-    var result = chunker.Parse(pages, new IngestionOptions
+    var result = chunker.CreateChunksWithReport(pages, new IngestionOptions
     {
         DocumentId = profile,
         ProfileId = profile,

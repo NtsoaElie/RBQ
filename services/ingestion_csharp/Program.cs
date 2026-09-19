@@ -95,7 +95,7 @@ try
             throw new ArgumentException("Only PDF and UTF-8 TXT files are supported. Convert HTML sources explicitly.");
         }
 
-        ParsingResult result = new DocumentChunker().Parse(pages, options);
+        ParsingResult result = new DocumentChunker().CreateChunksWithReport(pages, options);
         List<Chunk> chunks = result.Chunks;
 
         string output = Path.GetFullPath(Require("--output"));

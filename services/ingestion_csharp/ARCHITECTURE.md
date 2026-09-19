@@ -1,6 +1,6 @@
 # How ingestion is organized
 
-Start with `DocumentChunker.Parse()`. It is a coordinator, not a collection of
+Start with `DocumentChunker.CreateChunksWithReport()`. It is a coordinator, not a collection of
 rules for every RBQ document title.
 
 ```text

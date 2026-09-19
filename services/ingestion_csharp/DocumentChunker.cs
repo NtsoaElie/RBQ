@@ -6,7 +6,7 @@ namespace Rbq.Ingestion;
 /// <summary>Prepares document text, runs the appropriate parser, and reports unread content.</summary>
 public sealed class DocumentChunker
 {
-    public ParsingResult Parse(IReadOnlyList<DocumentPage> pages, IngestionOptions options)
+    public ParsingResult CreateChunksWithReport(IReadOnlyList<DocumentPage> pages, IngestionOptions options)
     {
         ValidateOptions(options);
 
@@ -54,7 +54,7 @@ public sealed class DocumentChunker
     // Kept for callers that only need chunks. Review issues remain attached to each chunk.
     public List<Chunk> CreateChunks(IReadOnlyList<DocumentPage> pages, IngestionOptions options)
     {
-        ParsingResult result = Parse(pages, options);
+        ParsingResult result = CreateChunksWithReport(pages, options);
         return result.Chunks;
     }
 

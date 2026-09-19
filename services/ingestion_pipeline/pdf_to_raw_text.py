@@ -1,19 +1,16 @@
-import pymupdf
+from pathlib import Path
 
 def pdf_to_raw_text(filepath):
-    doc = pymupdf.open(filepath)
-    filename = doc.name
-    page_content = [] #page content
-    page_number = 0 #page number counter
-
-    for page in doc: 
-        text = page.get_text("text")
-        page_number = page_number + 1
-        current_page = page_number
-        page_content.append((text, current_page, filename))
-        # print(repr(text))
-    return page_content
-
+    import pymupdf
+    pages = []
+    with pymupdf.open(filepath) as doc:
+        for number, page in enumerate(doc, 1):
+            # Sorting by y can interleave table columns. Validate native order.
+            text = page.get_text('text', sort=False)
+            if not text.strip():
+                raise ValueError(f'Page {number} has no text; OCR/review required')
+            pages.append((text, number, Path(filepath).name))
+    return pages
 
 
 

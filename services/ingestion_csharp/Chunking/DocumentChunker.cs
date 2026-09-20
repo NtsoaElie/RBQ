@@ -15,34 +15,25 @@ public sealed class DocumentChunker
             return emptyResult;
         }
 
-        DocumentKind kind = DetermineDocumentKind(options);
-
-        List<TextBlock> blocks = CollectTextBlocks(pages);
-        DocumentSource source = GetDocumentSource(pages[0].Filename, kind, options);
-
-        // Keep the version based on all original text, including headers and footers.
-        string documentText = string.Join("\n", pages.Select(page => page.Text));
-        string documentVersion = ChunkFactory.Hash(documentText);
+        // 1. Gather the text and identify headers and footers to skip.
+        List<TextBlock> allTextBlocks = CollectTextBlocks(pages);
 
         var headerFooterDetector = new HeaderFooterDetector();
-        HashSet<string> excludedBlockIds = headerFooterDetector.FindExcludedBlockIds(blocks);
-        List<TextBlock> contentBlocks = GetContentBlocks(blocks, excludedBlockIds);
+        HashSet<string> headerAndFooterIds = headerFooterDetector.FindExcludedBlockIds(allTextBlocks);
+        List<TextBlock> textToProcess = GetBlocksWithoutHeadersAndFooters(
+            allTextBlocks, headerAndFooterIds);
 
-        var document = new ExtractedDocument
-        {
-            Source = source,
-            Filename = pages[0].Filename,
-            Version = documentVersion,
-            Blocks = contentBlocks
-        };
+        // 2. Let the parser for this document type create the chunks.
+        ExtractedDocument document = PrepareDocumentForParser(pages, textToProcess, options);
 
         var parserFactory = new DocumentParserFactory();
-        IDocumentParser parser = parserFactory.GetParser(kind);
-        ParsingResult result = parser.Parse(document, options);
+        IDocumentParser documentParser = parserFactory.GetParser(document.Source.Kind);
+        ParsingResult result = documentParser.Parse(document, options);
 
-        RecordExcludedBlocks(result, blocks, excludedBlockIds);
-        FindUnclassifiedBlocks(result, blocks);
-        AddReviewWarnings(result, blocks);
+        // 3. Report skipped text, text the parser did not recognize, and warnings.
+        RecordSkippedHeadersAndFooters(result, allTextBlocks, headerAndFooterIds);
+        FindTextNotHandledByParser(result, allTextBlocks);
+        AddReviewWarnings(result, allTextBlocks);
 
         return result;
     }
@@ -52,6 +43,33 @@ public sealed class DocumentChunker
     {
         ParsingResult result = CreateChunksWithReport(pages, options);
         return result.Chunks;
+    }
+
+    private static ExtractedDocument PrepareDocumentForParser(
+        IReadOnlyList<DocumentPage> pages,
+        List<TextBlock> textToProcess,
+        IngestionOptions options)
+    {
+        string filename = pages[0].Filename;
+        DocumentKind documentKind = DetermineDocumentKind(options);
+        DocumentSource source = GetDocumentSource(filename, documentKind, options);
+        string documentVersion = CreateDocumentVersion(pages);
+
+        return new ExtractedDocument
+        {
+            Source = source,
+            Filename = filename,
+            Version = documentVersion,
+            Blocks = textToProcess
+        };
+    }
+
+    private static string CreateDocumentVersion(IReadOnlyList<DocumentPage> pages)
+    {
+        // Use all original text, including skipped headers and footers.
+        // The same document text produces the same version.
+        string originalText = string.Join("\n", pages.Select(page => page.Text));
+        return ChunkFactory.Hash(originalText);
     }
 
     private static DocumentKind DetermineDocumentKind(IngestionOptions options)
@@ -155,7 +173,7 @@ public sealed class DocumentChunker
         };
     }
 
-    private static List<TextBlock> GetContentBlocks(
+    private static List<TextBlock> GetBlocksWithoutHeadersAndFooters(
         List<TextBlock> blocks,
         HashSet<string> excludedBlockIds)
     {
@@ -172,7 +190,7 @@ public sealed class DocumentChunker
         return contentBlocks;
     }
 
-    private static void RecordExcludedBlocks(
+    private static void RecordSkippedHeadersAndFooters(
         ParsingResult result,
         List<TextBlock> blocks,
         HashSet<string> excludedBlockIds)
@@ -186,7 +204,7 @@ public sealed class DocumentChunker
         }
     }
 
-    private static void FindUnclassifiedBlocks(ParsingResult result, List<TextBlock> blocks)
+    private static void FindTextNotHandledByParser(ParsingResult result, List<TextBlock> blocks)
     {
         // Every original block must be in a chunk, explicitly excluded, or marked for review.
         var accountedBlockIds = new HashSet<string>();

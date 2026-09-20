@@ -3,9 +3,9 @@ using Rbq.Contracts;
 namespace Rbq.Ingestion;
 
 /// <summary>Shared entry point for console ingestion and a future upload interface.</summary>
-public sealed class DocumentIngestionService
+public sealed class DocumentChunkingService
 {
-    public async Task<ParsingResult> IngestAsync(string filePath, IngestionOptions options)
+    public async Task<ParsingResult> CreateChunksFromDocumentAsync(string filePath, IngestionOptions options)
     {
         ValidateSettings(options);
         List<DocumentPage> pages = await ExtractPagesAsync(filePath);

@@ -1,6 +1,6 @@
 # How ingestion is organized
 
-Start with `DocumentIngestionService.IngestAsync()` in Services/. It validates settings and extracts pages, then calls `DocumentChunker.CreateChunksWithReport()` in Chunking/. The chunker is a coordinator, not a collection of
+Start with `DocumentChunkingService.CreateChunksFromDocumentAsync()` in Services/. It validates settings and extracts pages, then calls `DocumentChunker.CreateChunksWithReport()` in Chunking/. The chunker is a coordinator, not a collection of
 rules for every RBQ document title.
 
 ```text
@@ -58,7 +58,7 @@ architecture now provides separate places to add them.
 
 ## Where checks belong
 
-DocumentIngestionService checks required identifiers and document-type
+DocumentChunkingService checks required identifiers and document-type
 settings before extraction. DocumentChunker trusts those settings and the page
 order supplied by our extractor; it focuses on creating chunks and reporting
 unread content. There is no arbitrary minimum chunk budget check.
@@ -70,7 +70,7 @@ duplicate, or invalid vectors.
 ## Folder guide
 
 - Models/: document, options, geometry, and parsing result objects.
-- Services/: DocumentIngestionService, the entry point shared by console and future UI.
+- Services/: DocumentChunkingService, the entry point shared by console and future UI.
 - Extraction/: reading PDF text and layout.
 - Chunking/: chunk construction, margin detection, and format-specific Parsers/.
 - Catalog/: catalog loading and the example source list.

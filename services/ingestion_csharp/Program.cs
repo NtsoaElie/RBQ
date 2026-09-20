@@ -75,8 +75,8 @@ try
             SkillIds = skillIds
         };
 
-        var ingestionService = new DocumentIngestionService();
-        ParsingResult result = await ingestionService.IngestAsync(args[1], options);
+        var chunkingService = new DocumentChunkingService();
+        ParsingResult result = await chunkingService.CreateChunksFromDocumentAsync(args[1], options);
         List<Chunk> chunks = result.Chunks;
 
         string output = Path.GetFullPath(Require("--output"));

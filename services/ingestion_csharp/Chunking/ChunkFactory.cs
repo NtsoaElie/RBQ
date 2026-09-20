@@ -14,21 +14,10 @@ public static class ChunkFactory
         Competency? competency = null, Competency? skill = null,
         IReadOnlyList<string>? sectionPath = null, string? articleNumber = null)
     {
-        string text = string.Join("\n", blocks.Select(block => block.Text));
-        var breadcrumb = new List<string>();
-        if (!string.IsNullOrWhiteSpace(options.ProfileId)) breadcrumb.Add(options.ProfileId);
-        if (module is not null) breadcrumb.Add(module.Label);
-        if (competency is not null) breadcrumb.Add(competency.Label);
-        if (sectionPath is not null) breadcrumb.AddRange(sectionPath);
-        if (breadcrumb.Count == 0) breadcrumb.Add(document.Source.Title);
-
-        List<string> skillIds = skill is null ? [.. options.SkillIds] : [skill.Id];
-        var issues = new List<string>();
-        if (options.SourceType == SourceType.Profile && (module is null || competency is null))
-            issues.Add("missing_parent");
-        if (options.SourceType == SourceType.Reference && skillIds.Count == 0)
-            issues.Add("unmapped_reference");
-        if (text.Length > options.MaxCharacters) issues.Add("oversized_unit");
+        string text = CombineBlockText(blocks);
+        List<string> chunkContext = BuildChunkContext(document, options, module, competency, sectionPath);
+        List<string> skillIds = GetAssociatedSkillIds(options, skill);
+        List<string> issues = FindReviewIssues(options, text, module, competency, skillIds);
 
         string identity = JsonSerializer.Serialize(new
         {
@@ -55,7 +44,7 @@ public static class ChunkFactory
             Competency = competency,
             Skill = skill,
             SkillIds = skillIds,
-            Breadcrumb = breadcrumb,
+            Breadcrumb = chunkContext,
             SectionPath = sectionPath?.ToList() ?? [],
             ArticleNumber = articleNumber,
             SourceBlockIds = blocks.Select(block => block.Id).ToList(),
@@ -63,6 +52,86 @@ public static class ChunkFactory
             ReviewIssues = issues,
             ParserVersion = ParserVersion
         };
+    }
+
+    private static string CombineBlockText(IReadOnlyList<TextBlock> blocks)
+    {
+        return string.Join("\n", blocks.Select(block => block.Text));
+    }
+
+    private static List<string> BuildChunkContext(
+        ExtractedDocument document,
+        IngestionOptions options,
+        Competency? module,
+        Competency? competency,
+        IReadOnlyList<string>? sectionPath)
+    {
+        var chunkContext = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(options.ProfileId))
+        {
+            chunkContext.Add(options.ProfileId);
+        }
+
+        if (module is not null)
+        {
+            chunkContext.Add(module.Label);
+        }
+
+        if (competency is not null)
+        {
+            chunkContext.Add(competency.Label);
+        }
+
+        if (sectionPath is not null)
+        {
+            chunkContext.AddRange(sectionPath);
+        }
+
+        if (chunkContext.Count == 0)
+        {
+            chunkContext.Add(document.Source.Title);
+        }
+
+        return chunkContext;
+    }
+
+    private static List<string> GetAssociatedSkillIds(IngestionOptions options, Competency? skill)
+    {
+        if (skill is not null)
+        {
+            return new List<string> { skill.Id };
+        }
+
+        // Copy the configured IDs so the chunk has its own list.
+        return new List<string>(options.SkillIds);
+    }
+
+    private static List<string> FindReviewIssues(
+        IngestionOptions options,
+        string text,
+        Competency? module,
+        Competency? competency,
+        IReadOnlyList<string> skillIds)
+    {
+        var issues = new List<string>();
+
+        if (options.SourceType == SourceType.Profile && (module is null || competency is null))
+        {
+            issues.Add("missing_parent");
+        }
+
+        if (options.SourceType == SourceType.Reference && skillIds.Count == 0)
+        {
+            issues.Add("unmapped_reference");
+        }
+
+        if (text.Length > options.MaxCharacters)
+        {
+            issues.Add("oversized_unit");
+        }
+
+        return issues;
     }
 
     public static string Hash(string value) => Convert.ToHexString(

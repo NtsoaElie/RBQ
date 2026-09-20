@@ -29,7 +29,7 @@ public sealed class SupabaseClient(HttpClient http)
     public Task<List<Rbq.Contracts.Chunk>> GetReferenceChunksAsync(
         string skillId, string documentId, string documentVersion, CancellationToken ct)
     {
-        var reader = new Rbq.Contracts.ReferenceChunkReader(http);
+        var reader = new Rbq.QueryApi.DataAccess.ReferenceChunkReader(http);
         return reader.ReadAsync(skillId, documentId, documentVersion, ct);
     }
 

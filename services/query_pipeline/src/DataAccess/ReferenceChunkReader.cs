@@ -1,7 +1,9 @@
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 
-namespace Rbq.Contracts;
+using Rbq.Contracts;
+
+namespace Rbq.QueryApi.DataAccess;
 
 /// <summary>Reads source evidence for one skill and an explicitly selected document revision.</summary>
 public sealed class ReferenceChunkReader(HttpClient http)

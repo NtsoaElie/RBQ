@@ -1,6 +1,6 @@
 # How ingestion is organized
 
-Start with `DocumentChunker.CreateChunksWithReport()`. It is a coordinator, not a collection of
+Start with `DocumentIngestionService.IngestAsync()` in Services/. It validates settings and extracts pages, then calls `DocumentChunker.CreateChunksWithReport()` in Chunking/. The chunker is a coordinator, not a collection of
 rules for every RBQ document title.
 
 ```text
@@ -55,3 +55,31 @@ skill descriptions. Unclassified content blocks upload until it is resolved.
 The example catalog is manual. HTML extraction, complete website discovery,
 specialized legal HTML adapters and table reconstruction are future work; the
 architecture now provides separate places to add them.
+
+## Where checks belong
+
+DocumentIngestionService checks required identifiers and document-type
+settings before extraction. DocumentChunker trusts those settings and the page
+order supplied by our extractor; it focuses on creating chunks and reporting
+unread content. There is no arbitrary minimum chunk budget check.
+
+Content checks remain: empty extraction, unclassified text, and parser review
+issues are reported. SupabaseUploader validates the saved chunks once before
+embedding and upload. EmbeddingClient checks the API response for missing,
+duplicate, or invalid vectors.
+## Folder guide
+
+- Models/: document, options, geometry, and parsing result objects.
+- Services/: DocumentIngestionService, the entry point shared by console and future UI.
+- Extraction/: reading PDF text and layout.
+- Chunking/: chunk construction, margin detection, and format-specific Parsers/.
+- Catalog/: catalog loading and the example source list.
+- Upload/: embedding requests and Supabase writes.
+- Database/: schema migration.
+- Docs/: this architecture walkthrough.
+
+Program.cs handles command-line arguments, JSON output, and upload client setup.
+Shared chunk models, serialization, and validation live in Rbq.Contracts.
+ReferenceChunkReader belongs to query_pipeline/src/DataAccess because it reads
+stored evidence. Existing ingestion and contract namespaces are retained so
+moving files does not require callers to change their model imports.

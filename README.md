@@ -12,7 +12,7 @@ dotnet run --project services/ingestion_csharp -- ingest ADM_ProfilDeCompetences
 ```
 
 Extraction does not require API credentials. Review the exported chunks before
-uploading. Apply services/ingestion_csharp/schema.sql in Supabase, set
+uploading. Apply services/ingestion_csharp/Database/schema.sql in Supabase, set
 OPENAI_API_KEY, SUPABASE_URL and SUPABASE_PRIVATE_KEY as environment variables,
 then run:
 

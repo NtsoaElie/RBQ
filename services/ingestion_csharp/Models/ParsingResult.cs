@@ -15,9 +15,3 @@ public sealed class ParsingResult
         ExcludedBlocks.Add(new ExcludedBlock { Block = block, Reason = reason });
     }
 }
-
-public sealed class ExcludedBlock
-{
-    public required TextBlock Block { get; init; }
-    public required string Reason { get; init; }
-}

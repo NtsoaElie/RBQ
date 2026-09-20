@@ -7,5 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../services/ingestion_csharp/Rbq.Ingestion.csproj" />
+    <ProjectReference Include="../../services/query_pipeline/Rbq.QueryApi.csproj" />
   </ItemGroup>
 </Project>

@@ -8,18 +8,14 @@ public sealed class DocumentChunker
 {
     public ParsingResult CreateChunksWithReport(IReadOnlyList<DocumentPage> pages, IngestionOptions options)
     {
-        ValidateOptions(options);
-
         if (pages.Count == 0)
         {
-            return new ParsingResult();
+            var emptyResult = new ParsingResult();
+            emptyResult.Warnings.Add("No text extracted; this document needs review.");
+            return emptyResult;
         }
 
-        ValidatePages(pages);
-        ValidateCatalogOptions(options);
-
         DocumentKind kind = DetermineDocumentKind(options);
-        ValidateSourceType(kind, options.SourceType);
 
         List<TextBlock> blocks = CollectTextBlocks(pages);
         DocumentSource source = GetDocumentSource(pages[0].Filename, kind, options);
@@ -58,69 +54,6 @@ public sealed class DocumentChunker
         return result.Chunks;
     }
 
-    private static void ValidateOptions(IngestionOptions options)
-    {
-        if (string.IsNullOrWhiteSpace(options.DocumentId))
-        {
-            throw new ArgumentException("DocumentId is required.");
-        }
-
-        if (options.MaxCharacters < 100)
-        {
-            throw new ArgumentException("The character budget must be at least 100.");
-        }
-
-        if (options.SourceType == SourceType.Profile && string.IsNullOrWhiteSpace(options.ProfileId))
-        {
-            throw new ArgumentException("A profile needs a ProfileId.");
-        }
-
-        if (!Enum.IsDefined(options.SourceType))
-        {
-            throw new ArgumentException("Invalid source type.");
-        }
-    }
-
-    private static void ValidatePages(IReadOnlyList<DocumentPage> pages)
-    {
-        string filename = pages[0].Filename;
-        int previousPageNumber = 0;
-
-        foreach (DocumentPage page in pages)
-        {
-            if (page.Filename != filename)
-            {
-                throw new ArgumentException("Process one document at a time.");
-            }
-
-            // Starting at zero also ensures that the first page number is positive.
-            if (page.Number <= previousPageNumber)
-            {
-                throw new ArgumentException("Page numbers must be positive, unique, and ascending.");
-            }
-
-            previousPageNumber = page.Number;
-        }
-    }
-
-    private static void ValidateCatalogOptions(IngestionOptions options)
-    {
-        if (options.Source is null)
-        {
-            return;
-        }
-
-        if (options.Source.Id != options.DocumentId)
-        {
-            throw new ArgumentException("Catalog identity conflicts with DocumentId.");
-        }
-
-        if (options.Kind.HasValue && options.Kind.Value != options.Source.Kind)
-        {
-            throw new ArgumentException("Catalog kind conflicts with the requested document kind.");
-        }
-    }
-
     private static DocumentKind DetermineDocumentKind(IngestionOptions options)
     {
         if (options.Source is not null)
@@ -141,29 +74,6 @@ public sealed class DocumentChunker
                 return DocumentKind.ExamInformation;
             default:
                 return DocumentKind.TechnicalDocument;
-        }
-    }
-
-    private static void ValidateSourceType(DocumentKind kind, SourceType sourceType)
-    {
-        SourceType expectedSourceType;
-
-        switch (kind)
-        {
-            case DocumentKind.CompetencyProfile:
-                expectedSourceType = SourceType.Profile;
-                break;
-            case DocumentKind.ExamInformation:
-                expectedSourceType = SourceType.ExamInfo;
-                break;
-            default:
-                expectedSourceType = SourceType.Reference;
-                break;
-        }
-
-        if (sourceType != expectedSourceType)
-        {
-            throw new ArgumentException("Document kind and source type disagree.");
         }
     }
 

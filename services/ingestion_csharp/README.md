@@ -32,7 +32,7 @@ carry a blocking review flag. Known front matter, summaries and table headings
 remain visible in the exclusion audit. Header removal uses repeated margin
 positions; there is no list of document titles to discard.
 
-See [architecture walkthrough](ARCHITECTURE.md) for each class's responsibility.
+See [architecture walkthrough](Docs/ARCHITECTURE.md) for each class's responsibility.
 
 ## Source catalog and parser selection
 
@@ -40,7 +40,7 @@ See [architecture walkthrough](ARCHITECTURE.md) for each class's responsibility.
 an example catalog, not a complete inventory of the RBQ preparation page.
 
 ```powershell
-dotnet run --project services/ingestion_csharp -- ingest safety.pdf --catalog services/ingestion_csharp/sources.example.json --document-id rbq-securite --output output/safety.json
+dotnet run --project services/ingestion_csharp -- ingest safety.pdf --catalog services/ingestion_csharp/Catalog/sources.example.json --document-id rbq-securite --output output/safety.json
 ```
 
 The catalog supplies kind, title, URL, profile associations and licence categories.
@@ -76,7 +76,7 @@ Use `--source-url` to retain the original document URL.
 
 ## Embed and upload
 
-Apply the existing additive migration `services/ingestion_csharp/schema.sql`
+Apply the existing additive migration `services/ingestion_csharp/Database/schema.sql`
 first. Set process environment variables `OPENAI_API_KEY`, `SUPABASE_URL`, and
 `SUPABASE_PRIVATE_KEY`. The old `OPEN_API_KEY` is a fallback. This CLI does not
 automatically load a `.env` file.
@@ -107,7 +107,7 @@ List<Chunk> references = await supabase.GetReferenceChunksAsync(
     cancellationToken);
 ```
 
-The shared `ReferenceChunkReader` requests reference passages mapped to that skill,
+The query service `ReferenceChunkReader` requests reference passages mapped to that skill,
 pages through results, deserializes metadata as `Chunk`, validates it, and checks
 the requested document version. An empty list means there is no mapped evidence;
 the future quiz generator should abstain instead of using the profile as proof.

@@ -75,27 +75,8 @@ try
             SkillIds = skillIds
         };
 
-        string input = args[1];
-        List<DocumentPage> pages;
-        if (Path.GetExtension(input).Equals(".pdf", StringComparison.OrdinalIgnoreCase))
-        {
-            pages = new PdfTextExtractor().Extract(input);
-        }
-        else if (Path.GetExtension(input).Equals(".txt", StringComparison.OrdinalIgnoreCase))
-        {
-            pages = [new DocumentPage
-            {
-                Text = await File.ReadAllTextAsync(input),
-                Number = 1,
-                Filename = Path.GetFileName(input)
-            }];
-        }
-        else
-        {
-            throw new ArgumentException("Only PDF and UTF-8 TXT files are supported. Convert HTML sources explicitly.");
-        }
-
-        ParsingResult result = new DocumentChunker().CreateChunksWithReport(pages, options);
+        var ingestionService = new DocumentIngestionService();
+        ParsingResult result = await ingestionService.IngestAsync(args[1], options);
         List<Chunk> chunks = result.Chunks;
 
         string output = Path.GetFullPath(Require("--output"));

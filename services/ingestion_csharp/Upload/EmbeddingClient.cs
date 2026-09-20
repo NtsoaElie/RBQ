@@ -7,9 +7,7 @@ public sealed class EmbeddingClient(HttpClient http)
 {
     public async Task<List<float[]>> EmbedAsync(IReadOnlyList<Chunk> chunks, CancellationToken ct = default)
     {
-        if (chunks.Any(chunk => string.IsNullOrWhiteSpace(chunk.Content)))
-            throw new ArgumentException("Cannot embed empty chunks.");
-
+        // SupabaseUploader checks chunk content before calling this client.
         var vectors = new List<float[]>();
         foreach (Chunk[] batch in chunks.Chunk(64))
         {

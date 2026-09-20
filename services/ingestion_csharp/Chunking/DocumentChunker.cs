@@ -18,10 +18,8 @@ public sealed class DocumentChunker
         // 1. Gather the text and identify headers and footers to skip.
         List<TextBlock> allTextBlocks = CollectTextBlocks(pages);
 
-        var headerFooterDetector = new HeaderFooterDetector();
-        HashSet<string> headerAndFooterIds = headerFooterDetector.FindExcludedBlockIds(allTextBlocks);
-        List<TextBlock> textToProcess = GetBlocksWithoutHeadersAndFooters(
-            allTextBlocks, headerAndFooterIds);
+        List<TextBlock> textToProcess = RemoveHeadersAndFooters(
+            allTextBlocks, out HashSet<string> headerAndFooterIds);
 
         // 2. Let the parser for this document type create the chunks.
         ExtractedDocument document = PrepareDocumentForParser(pages, textToProcess, options);
@@ -173,20 +171,28 @@ public sealed class DocumentChunker
         };
     }
 
-    private static List<TextBlock> GetBlocksWithoutHeadersAndFooters(
-        List<TextBlock> blocks,
-        HashSet<string> excludedBlockIds)
+    private static List<TextBlock> RemoveHeadersAndFooters(
+        List<TextBlock> allTextBlocks,
+        out HashSet<string> removedBlockIds)
     {
+        var headerFooterDetector = new HeaderFooterDetector();
+        removedBlockIds = headerFooterDetector.FindExcludedBlockIds(allTextBlocks);
+
         var contentBlocks = new List<TextBlock>();
 
-        foreach (TextBlock block in blocks)
+        foreach (TextBlock block in allTextBlocks)
         {
-            if (!excludedBlockIds.Contains(block.Id))
+            bool isDetectedHeaderOrFooter = removedBlockIds.Contains(block.Id);
+
+            if (isDetectedHeaderOrFooter)
             {
-                contentBlocks.Add(block);
+                continue;
             }
+
+            contentBlocks.Add(block);
         }
 
+        // Keep the original blocks intact so removed text can appear in the report.
         return contentBlocks;
     }
 

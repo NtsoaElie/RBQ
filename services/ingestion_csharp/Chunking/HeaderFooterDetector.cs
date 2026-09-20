@@ -4,53 +4,128 @@ namespace Rbq.Ingestion;
 
 public sealed class HeaderFooterDetector
 {
+    // Page coordinates run from 0 to 1, starting at the top-left corner.
+    private const double TopMarginEnd = 0.10;
+    private const double BottomMarginStart = 0.90;
+    private const int MinimumRepeatedPages = 3;
+    private const double RequiredPageFraction = 0.50;
+    private const double MaximumVerticalPositionVariation = 0.025;
+    private const double MaximumHorizontalPositionVariation = 0.05;
+
     public HashSet<string> FindExcludedBlockIds(IReadOnlyList<TextBlock> blocks)
     {
-        var excluded = new HashSet<string>();
-        int pageCount = blocks.Select(block => block.PageNumber).Distinct().Count();
-        int minimumRepeats = Math.Max(3, (int)Math.Ceiling(pageCount * 0.5));
+        var excludedBlockIds = new HashSet<string>();
 
-        // Repetition alone is insufficient: text must also occupy a stable margin.
-        var candidates = blocks.Where(IsMargin).Where(block => !IsStructuralHeading(block.Text));
-        var groups = candidates.GroupBy(block => new
+        int documentPageCount = blocks.Select(block => block.PageNumber).Distinct().Count();
+        int requiredPagesByFraction = (int)Math.Ceiling(documentPageCount * RequiredPageFraction);
+        int requiredRepeatedPages = Math.Max(MinimumRepeatedPages, requiredPagesByFraction);
+
+        var marginBlocks = new List<TextBlock>();
+
+        foreach (TextBlock block in blocks)
         {
-            Text = Normalize(block.Text),
-            TopMargin = block.Bounds!.Top < 0.10
+            bool isInPageMargin = IsInTopOrBottomMargin(block);
+            bool isDocumentHeading = IsStructuralHeading(block.Text);
+
+            if (isInPageMargin && !isDocumentHeading)
+            {
+                marginBlocks.Add(block);
+            }
+        }
+
+        // Matching text at the top and bottom belongs to separate groups.
+        var repeatedTextGroups = marginBlocks.GroupBy(block => new
+        {
+            Text = NormalizeTextForComparison(block.Text),
+            IsTopMargin = block.Bounds!.Top < TopMarginEnd
         });
 
-        foreach (var group in groups)
+        foreach (var repeatedTextGroup in repeatedTextGroups)
         {
-            if (group.Select(block => block.PageNumber).Distinct().Count() < minimumRepeats)
+            int pagesWithThisText = repeatedTextGroup
+                .Select(block => block.PageNumber)
+                .Distinct()
+                .Count();
+
+            bool appearsOnEnoughPages = pagesWithThisText >= requiredRepeatedPages;
+
+            if (!appearsOnEnoughPages)
+            {
                 continue;
-            if (group.Max(block => block.Bounds!.Top) - group.Min(block => block.Bounds!.Top) > 0.025)
+            }
+
+            double verticalPositionVariation =
+                repeatedTextGroup.Max(block => block.Bounds!.Top) -
+                repeatedTextGroup.Min(block => block.Bounds!.Top);
+
+            double horizontalPositionVariation =
+                repeatedTextGroup.Max(block => block.Bounds!.Left) -
+                repeatedTextGroup.Min(block => block.Bounds!.Left);
+
+            bool hasConsistentVerticalPosition =
+                verticalPositionVariation <= MaximumVerticalPositionVariation;
+
+            bool hasConsistentHorizontalPosition =
+                horizontalPositionVariation <= MaximumHorizontalPositionVariation;
+
+            if (!hasConsistentVerticalPosition || !hasConsistentHorizontalPosition)
+            {
                 continue;
-            if (group.Max(block => block.Bounds!.Left) - group.Min(block => block.Bounds!.Left) > 0.05)
-                continue;
-            foreach (TextBlock block in group)
-                excluded.Add(block.Id);
+            }
+
+            foreach (TextBlock block in repeatedTextGroup)
+            {
+                excludedBlockIds.Add(block.Id);
+            }
         }
 
-        foreach (TextBlock block in candidates)
+        // Page numbers do not need to repeat, but must still be in a page margin.
+        foreach (TextBlock block in marginBlocks)
         {
-            string value = block.Text.Trim();
-            // A numeric value in the body must never be removed as a page number.
-            if (value == block.PageNumber.ToString())
-                excluded.Add(block.Id);
+            string trimmedText = block.Text.Trim();
+            string expectedPageNumber = block.PageNumber.ToString();
+            bool containsOnlyCurrentPageNumber = trimmedText == expectedPageNumber;
+
+            if (containsOnlyCurrentPageNumber)
+            {
+                excludedBlockIds.Add(block.Id);
+            }
         }
-        return excluded;
+
+        return excludedBlockIds;
     }
 
-    private static bool IsMargin(TextBlock block)
+    private static bool IsInTopOrBottomMargin(TextBlock block)
     {
-        return block.Bounds is not null && (block.Bounds.Bottom < 0.10 || block.Bounds.Top > 0.90);
+        if (block.Bounds is null)
+        {
+            return false;
+        }
+
+        bool isEntirelyInTopMargin = block.Bounds.Bottom < TopMarginEnd;
+        bool isEntirelyInBottomMargin = block.Bounds.Top > BottomMarginStart;
+
+        return isEntirelyInTopMargin || isEntirelyInBottomMargin;
     }
 
     private static bool IsStructuralHeading(string text)
     {
-        return Regex.IsMatch(text, @"^(Module|Chapitre|Section|Article)\b", RegexOptions.IgnoreCase)
-            || text.Contains("compétence", StringComparison.OrdinalIgnoreCase)
-            || text.Contains("Habiletés", StringComparison.OrdinalIgnoreCase);
+        bool startsWithSectionHeading = Regex.IsMatch(
+            text,
+            @"^(Module|Chapitre|Section|Article)\b",
+            RegexOptions.IgnoreCase);
+
+        bool mentionsCompetency = text.Contains("compétence", StringComparison.OrdinalIgnoreCase);
+        bool mentionsSkills = text.Contains("Habiletés", StringComparison.OrdinalIgnoreCase);
+
+        return startsWithSectionHeading || mentionsCompetency || mentionsSkills;
     }
 
-    private static string Normalize(string text) => Regex.Replace(text.Trim(), @"\s+", " ").ToUpperInvariant();
+    private static string NormalizeTextForComparison(string text)
+    {
+        string trimmedText = text.Trim();
+        string textWithSingleSpaces = Regex.Replace(trimmedText, @"\s+", " ");
+
+        return textWithSingleSpaces.ToUpperInvariant();
+    }
 }

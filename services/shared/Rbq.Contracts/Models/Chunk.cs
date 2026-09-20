@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Rbq.Contracts;
 
 /// <summary>The same source object is used by ingestion and question generation.</summary>
@@ -21,7 +23,9 @@ public sealed class Chunk
     public Competency? Competency { get; init; }
     public Competency? Skill { get; init; }
     public List<string> SkillIds { get; init; } = [];
-    public List<string> Breadcrumb { get; init; } = [];
+    // Keep the stored JSON field compatible with existing chunks.
+    [JsonPropertyName("breadcrumb")]
+    public List<string> ChunkContext { get; init; } = [];
     public List<string> SectionPath { get; init; } = [];
     public string? ArticleNumber { get; init; }
     public List<string> SourceBlockIds { get; init; } = [];
@@ -29,5 +33,5 @@ public sealed class Chunk
     public List<string> ReviewIssues { get; init; } = [];
     public string ParserVersion { get; init; } = "rbq-csharp-v1";
 
-    public string EmbeddingText => string.Join(" > ", Breadcrumb) + "\n" + Content;
+    public string EmbeddingText => string.Join(" > ", ChunkContext) + "\n" + Content;
 }

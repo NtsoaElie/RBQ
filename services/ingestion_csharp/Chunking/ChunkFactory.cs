@@ -17,17 +17,13 @@ public static class ChunkFactory
         string text = CombineBlockText(blocks);
         List<string> chunkContext = BuildChunkContext(document, options, module, competency, sectionPath);
         List<string> skillIds = GetAssociatedSkillIds(options, skill);
-        List<string> issues = FindReviewIssues(options, text, module, competency, skillIds);
+        List<string> potentialIssues = ListPotentialIssues(options, text, module, competency, skillIds);
 
-        string identity = JsonSerializer.Serialize(new
-        {
-            document.Source.Id, document.Version, ParserVersion,
-            blockIds = blocks.Select(block => block.Id), skillIds, text, sectionPath, articleNumber
-        });
+        string chunkId = CreateChunkId(document, blocks, skillIds, text, sectionPath, articleNumber);
 
         return new Chunk
         {
-            ChunkId = Hash(identity),
+            ChunkId = chunkId,
             DocumentId = document.Source.Id,
             DocumentVersion = document.Version,
             ProfileId = options.ProfileId,
@@ -44,14 +40,37 @@ public static class ChunkFactory
             Competency = competency,
             Skill = skill,
             SkillIds = skillIds,
-            Breadcrumb = chunkContext,
+            ChunkContext = chunkContext,
             SectionPath = sectionPath?.ToList() ?? [],
             ArticleNumber = articleNumber,
             SourceBlockIds = blocks.Select(block => block.Id).ToList(),
             Content = text,
-            ReviewIssues = issues,
+            ReviewIssues = potentialIssues,
             ParserVersion = ParserVersion
         };
+    }
+
+    private static string CreateChunkId(
+        ExtractedDocument document,
+        IReadOnlyList<TextBlock> blocks,
+        IReadOnlyList<string> skillIds,
+        string text,
+        IReadOnlyList<string>? sectionPath,
+        string? articleNumber)
+    {
+        string identity = JsonSerializer.Serialize(new
+        {
+            document.Source.Id,
+            document.Version,
+            ParserVersion,
+            blockIds = blocks.Select(block => block.Id),
+            skillIds,
+            text,
+            sectionPath,
+            articleNumber
+        });
+
+        return Hash(identity);
     }
 
     private static string CombineBlockText(IReadOnlyList<TextBlock> blocks)
@@ -107,31 +126,31 @@ public static class ChunkFactory
         return new List<string>(options.SkillIds);
     }
 
-    private static List<string> FindReviewIssues(
+    private static List<string> ListPotentialIssues(
         IngestionOptions options,
         string text,
         Competency? module,
         Competency? competency,
         IReadOnlyList<string> skillIds)
     {
-        var issues = new List<string>();
+        var potentialIssues = new List<string>();
 
         if (options.SourceType == SourceType.Profile && (module is null || competency is null))
         {
-            issues.Add("missing_parent");
+            potentialIssues.Add("missing_parent");
         }
 
         if (options.SourceType == SourceType.Reference && skillIds.Count == 0)
         {
-            issues.Add("unmapped_reference");
+            potentialIssues.Add("unmapped_reference");
         }
 
         if (text.Length > options.MaxCharacters)
         {
-            issues.Add("oversized_unit");
+            potentialIssues.Add("oversized_unit");
         }
 
-        return issues;
+        return potentialIssues;
     }
 
     public static string Hash(string value) => Convert.ToHexString(
